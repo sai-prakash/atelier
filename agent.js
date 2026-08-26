@@ -178,12 +178,12 @@ function pickSlice(intent, inspections) {
   const noNew = forbidsNewRepo(intent) || isAdvance(intent);
   for (const ev of ranked) {
     if (ev.continueIssue && ev.firstUnchecked) {
-      return { kind: "continue", ev, issue: ev.continueIssue, box: ev.firstUnchecked, title: ev.firstUnchecked.text.slice(0, 92), why: "Open issue #" + ev.continueIssue.number + " already has a checklist. The slice is the first empty box." };
+      return { kind: "continue", ev, issue: ev.continueIssue, box: ev.firstUnchecked, title: cleanTitle(ev.firstUnchecked.text).slice(0, 92), why: "Open issue #" + ev.continueIssue.number + " already has a checklist. The slice is the first empty box." };
     }
   }
   for (const ev of ranked) {
     if (ev.continueIssue) {
-      return { kind: "continue", ev, issue: ev.continueIssue, box: null, title: ev.continueIssue.title.slice(0, 92), why: "Open issue #" + ev.continueIssue.number + " has no boxes. Continue that title." };
+      return { kind: "continue", ev, issue: ev.continueIssue, box: null, title: cleanTitle(ev.continueIssue.title).slice(0, 92), why: "Open issue #" + ev.continueIssue.number + " has no boxes. Continue that title." };
     }
   }
   for (const ev of ranked) {
@@ -235,7 +235,7 @@ function workOrder(intent, slice) {
     "INTENT " + intent,
     "REPO " + ev.full,
     "SLICE " + title,
-    continues ? ("CONTINUE issue #" + continues + (branch ? " | branch " + branch : "") + (spec ? " | " + spec : "")) : "CONTINUE new issue",
+    continues ? ("CONTINUE issue #" + continues + (branch ? " | branch " + branch : "") + (spec ? " | spec " + spec : "")) : "CONTINUE new issue",
     "", "## Do this sitting", ...doSteps.map((s, i) => (i + 1) + ". " + s),
     "", "## Done when", ...done.map((s) => "- [ ] " + s),
     "", "## Do not", ...dont.map((s) => "- " + s),
@@ -251,12 +251,12 @@ function buildDo(slice, branch, spec) {
   const ev = slice.ev;
   if (slice.kind === "continue" && box) {
     const steps = [];
-    if (branch) steps.push("Check out `" + branch + "` if it exists; otherwise create it from main.");
-    else steps.push("Stay on the branch named in #" + issue.number + ", or create it from main.");
-    if (spec) steps.push("Open `" + spec + "` and implement only this box: " + box.text);
-    else steps.push("Do only this box on #" + issue.number + ": " + box.text);
+    if (branch) steps.push("git checkout " + branch + " (create that branch from main if it is missing).");
+    else steps.push("Use the branch written on #" + issue.number + ", or create feat/ from main.");
+    if (spec) steps.push("Open the spec file " + spec + " — that is a file, not a branch. Implement only: " + cleanTitle(box.text));
+    else steps.push("Do only this box on #" + issue.number + ": " + cleanTitle(box.text));
     const others = (issue.boxes || []).filter((b) => !b.checked && b.text !== box.text);
-    if (others.length) steps.push("Do not start " + others.slice(0, 3).map((b) => clip(b.text, 24)).join(", ") + " in this sitting.");
+    if (others.length) steps.push("Do not start " + others.slice(0, 3).map((b) => clip(cleanTitle(b.text), 24)).join(", ") + " in this sitting.");
     steps.push("Tick that box on #" + issue.number + ". Leave the other boxes.");
     return steps.slice(0, 5);
   }
@@ -269,7 +269,7 @@ function buildDo(slice, branch, spec) {
   return ["Open " + ev.full + " and change only the named file.", "Do not add a repository or a tracker.", "Commit when the done-when is true."];
 }
 function buildDone(slice) {
-  if (slice.kind === "continue" && slice.box) return [clip(slice.box.text, 80) + " is checked on #" + slice.issue.number, "No new issue was opened in this repo"];
+  if (slice.kind === "continue" && slice.box) return [cleanTitle(slice.box.text) + " is checked on #" + slice.issue.number, "No new issue was opened in this repo"];
   if (slice.kind === "continue") return ["#" + slice.issue.number + " moved: comment, checkbox, or close"];
   if (/README/.test(slice.title)) return ["README.md exists on main and states how to start"];
   if (/AGENTS/.test(slice.title)) return ["AGENTS.md exists on main"];
@@ -282,7 +282,7 @@ function buildDont(intent, slice) {
   if (slice.kind === "continue") list.push("A second issue next to #" + slice.issue.number);
   if (slice.box) {
     const rest = (slice.issue.boxes || []).filter((b) => !b.checked && b.text !== slice.box.text);
-    if (rest.length) list.push("Later boxes: " + rest.slice(0, 4).map((b) => clip(b.text, 28)).join("; "));
+    if (rest.length) list.push("Later boxes: " + rest.slice(0, 4).map((b) => clip(cleanTitle(b.text), 28)).join("; "));
   }
   list.push("Extra planning files in atelier");
   list.push("A paid provider call");
@@ -290,7 +290,7 @@ function buildDont(intent, slice) {
 }
 function buildEvidence(ev, slice) {
   const rows = [];
-  if (slice.issue) rows.push(ev.name + "#" + slice.issue.number + " is open" + (slice.box ? " with an unchecked box: " + clip(slice.box.text, 60) : ""));
+  if (slice.issue) rows.push(ev.name + "#" + slice.issue.number + " is open" + (slice.box ? " with an unchecked box: " + clip(cleanTitle(slice.box.text), 60) : ""));
   rows.push(ev.full + " last push " + ev.age + "d ago; last commit: " + (ev.commits[0] || "none"));
   if (ev.docsHeavy) rows.push(ev.name + " recent commits are notes/docs — writing, not a hole");
   rows.push(ev.open ? ev.open + " open issue(s) seen" : "No open issues seen on this repo");
@@ -336,6 +336,7 @@ function summarizeEvent(e) {
   if (e.type === "CreateEvent") return "Created " + (payload.ref_type || "") + " " + (payload.ref || "");
   return String(e.type || "").replace(/Event$/, "");
 }
+function cleanTitle(s) { return String(s || "").replace(/\*\*/g, "").replace(/\s+/g, " ").trim(); }
 function firstLine(s) { return String(s || "").split("\n").map((x) => x.trim()).find(Boolean) || ""; }
 function clip(s, n) { const t = String(s || ""); return t.length <= n ? t : t.slice(0, n - 1) + "…"; }
 function daysSince(date) { if (!date) return 999; return Math.floor((Date.now() - new Date(date).getTime()) / 86400000); }
