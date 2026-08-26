@@ -46,6 +46,7 @@ const GH = {
     } catch { return []; }
   },
   async commits(owner, repo, perPage = 8) { return this.req(`/repos/${owner}/${repo}/commits?per_page=${perPage}`); },
+  async commit(owner, repo, sha) { return this.req(`/repos/${owner}/${repo}/commits/${sha}`); },
   async readme(owner, repo) {
     try { const file = await this.req(`/repos/${owner}/${repo}/readme`); return decodeB64(file.content); } catch { return ""; }
   },
