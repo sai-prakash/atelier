@@ -75,9 +75,7 @@ h2.display { font-family: var(--serif); font-weight: 400; font-size: clamp(28px,
 .plan h3 { font-family: var(--serif); font-weight: 400; font-size: 26px; margin: 0 0 8px; }
 .task { padding: 14px 0; border-bottom: 1px solid var(--line); }
 .task .repo { font-family: var(--mono); font-size: 12px; color: var(--mute); }
-.trace { list-style: none; padding: 0; margin: 0 0 22px; }
-.trace li { padding: 10px 0; border-bottom: 1px solid var(--line); color: var(--mute); font-size: 13px; line-height: 1.45; }
-.trace span { display: block; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink); margin-bottom: 4px; }
+.task .t { margin-top: 4px; }
 .err { color: var(--danger); font-size: 13px; margin-top: 10px; }
 .ok { color: var(--good); font-size: 13px; margin-top: 10px; }
 .empty { color: var(--mute); padding: 40px 0; }
@@ -90,3 +88,8 @@ h2.display { font-family: var(--serif); font-weight: 400; font-size: clamp(28px,
 .chip.active { background: var(--ink); color: var(--paper); border-color: var(--ink); }
 .settings p { color: var(--mute); max-width: 52ch; }
 hr.rule { border: 0; border-top: 1px solid var(--line); margin: 28px 0; }
+.consequence { color: var(--mute); margin: 0 0 18px; font-size: 14px; }
+.why { margin-top: 22px; color: var(--mute); font-size: 13px; }
+.why summary { cursor: pointer; letter-spacing: 0.08em; text-transform: uppercase; font-size: 11px; color: var(--ink); list-style: none; }
+.why summary::-webkit-details-marker { display: none; }
+.why p { margin: 10px 0 0; max-width: 52ch; }
