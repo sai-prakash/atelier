@@ -14,8 +14,8 @@ Work is already on GitHub. Trackers that copy issues into another database go st
 
 - Quiet. Jony Ive restraint: paper, ink, one mark, no chrome.
 - Native. If GitHub cannot store it, atelier does not store it.
-- Agentic. Understand → Plan → Execute. Humans approve by pressing Open.
-- Honest. Heuristic planning is labeled as heuristic. LLM planning belongs in Actions with your secret, not a vendor server.
+- Agentic. Observe → gather evidence → infer → decide → execute. Humans approve by pressing Open.
+- Honest. Reasoning is explicit and sourced from GitHub. An optional model belongs in Actions secrets — not a vendor server.
 
 ## How to use
 
@@ -23,7 +23,7 @@ Work is already on GitHub. Trackers that copy issues into another database go st
 2. Paste a GitHub token with `repo`, `workflow`, and `read:user`.
 3. Studio shows what is alive.
 4. Work lists open issues and pull requests across the account.
-5. Plan takes an intent, maps it onto repositories, and can open issues plus save `workspace/plans/*.md`.
+5. Plan takes an intent, reads README/commits/issues from the matching repos, writes a reasoning trace, then can open issues and save `workspace/plans/*.md`.
 
 The token stays in `localStorage` on your machine.
 
