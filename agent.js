@@ -221,9 +221,9 @@ function rankInspect(ev) {
 function workOrder(intent, slice) {
   const ev = slice.ev;
   const issue = slice.issue;
-  const box = slice.box;
-  const branch = (issue && issue.branch) || null;
+  let branch = (issue && issue.branch) || null;
   const spec = (issue && issue.spec) || null;
+  if (branch && spec && (branch === spec || /\.[a-z0-9]{1,5}$/i.test(branch))) branch = null;
   const continues = issue ? issue.number : null;
   const title = slice.title;
   const doSteps = buildDo(slice, branch, spec);
@@ -304,10 +304,18 @@ function parseBoxes(body) {
   }).filter(Boolean);
 }
 function findBranch(body) {
-  const tick = String(body || "").match(/`((?:feat|fix|chore|docs)\/[A-Za-z0-9._/-]+)`/);
-  if (tick) return tick[1];
-  const named = String(body || "").match(/\bbranch(?:\s+name)?[:\s]+`?((?:feat|fix|chore|docs)\/[A-Za-z0-9._/-]+)`?/i);
-  return named ? named[1] : null;
+  const text = String(body || "");
+  const looksFile = (s) => /\.[a-z0-9]{1,5}$/i.test(s) || /\/(docs|spec|specs|superpowers)\//i.test(s);
+  const take = (s) => {
+    if (!s || looksFile(s)) return null;
+    return s.replace(/^[`'\"]+|[`'\"]+$/g, "");
+  };
+  const labeled = text.match(/\bbranch(?:\s+name)?\s*[:\-]?\s*`?((?:feat|fix|chore|hotfix|refactor|test|build|ci)\/[A-Za-z0-9._/-]+)`?/i);
+  if (labeled) return take(labeled[1]);
+  const tick = text.match(/`((?:feat|fix|chore|hotfix|refactor)\/[A-Za-z0-9._/-]+)`/);
+  if (tick) return take(tick[1]);
+  const bare = text.match(/\b((?:feat|fix|chore|hotfix)\/[A-Za-z0-9._-][A-Za-z0-9._/-]*)/);
+  return take(bare && bare[1]);
 }
 function findSpec(body) {
   const m = String(body || "").match(/((?:docs|spec|specs|superpowers)\/[A-Za-z0-9._/-]+\.md)/);
