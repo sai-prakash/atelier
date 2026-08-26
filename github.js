@@ -26,7 +26,7 @@ const GH = {
     let data = null;
     try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
     if (!res.ok) {
-      const msg = data && (data.message || data.error) || res.statusText;
+      const msg = (data && (data.message || data.error)) || res.statusText;
       const err = new Error(msg);
       err.status = res.status;
       err.data = data;
@@ -56,9 +56,18 @@ const GH = {
     return data.items || [];
   },
 
-  async repoIssues(owner, repo, perPage = 8) {
+  async repoIssues(owner, repo, perPage = 10) {
     try {
       return await this.req(`/repos/${owner}/${repo}/issues?state=open&per_page=${perPage}`);
+    } catch {
+      return [];
+    }
+  },
+
+  async rootTree(owner, repo) {
+    try {
+      const items = await this.req(`/repos/${owner}/${repo}/contents/`);
+      return (Array.isArray(items) ? items : []).map((i) => i.name);
     } catch {
       return [];
     }
