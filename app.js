@@ -28,10 +28,14 @@ function workView() {
   return `<section class="panel"><p class="kicker">Work</p><h2 class="display">Across the estate.</h2><p class="sub">Issues and pull requests from every repository you can see.</p><input class="search" id="q" type="text" placeholder="Filter by title or repo" value="${esc(state.query)}" /><div class="switcher">${["all", "issues", "pulls"].map((f) => `<button class="chip ${state.filter === f ? "active" : ""}" data-filter="${f}">${f}</button>`).join("")}</div><div class="list">${items.length ? items.map((it) => `<a class="item" href="${esc(it.html_url)}" target="_blank" rel="noreferrer"><div><div class="t">${esc(it.title)}</div><div class="m">${esc(repoFromUrl(it.repository_url || it.html_url))} · #${it.number}</div></div><span class="pill ${it.pull_request ? "" : "on"}">${it.pull_request ? "PR" : "Issue"}</span></a>`).join("") : `<p class="empty">Nothing matches.</p>`}</div></section>`;
 }
 function planView() {
-  return `<section class="panel"><p class="kicker">Plan</p><h2 class="display">Gather evidence. Then decide.</h2><div class="composer"><label class="field"><span class="label">Intent</span><textarea id="intent" placeholder="Ship the harness. Close the loop on forgegraph.">${esc(state.intent)}</textarea></label><div class="row actions"><button class="btn" id="make-plan" ${state.busy ? "disabled" : ""}>${state.busy ? "Reasoning…" : "Reason"}</button><button class="btn ghost" id="execute" ${!state.plan || state.busy ? "disabled" : ""}>Open as issues</button><button class="btn ghost tiny" id="save-plan" ${!state.plan || state.busy ? "disabled" : ""}>Save to repo</button></div>${state.error ? `<p class="err">${esc(state.error)}</p>` : ""}${state.notice ? `<p class="ok">${esc(state.notice)}</p>` : ""}</div>${state.plan ? renderPlan(state.plan) : `<p class="empty">Reasoning reads READMEs, commits, and open issues from matching repos, then writes a sequenced plan.</p>`}</section>`;
+  const n = state.plan && state.plan.tasks ? state.plan.tasks.length : 0;
+  const filing = n ? `File ${n} issue${n === 1 ? "" : "s"}` : "File issues";
+  return `<section class="panel"><p class="kicker">Plan</p><h2 class="display">What should happen next.</h2><p class="sub">One sentence. Then a short list of work, in the repos it belongs to.</p><div class="composer"><label class="field"><span class="label">The work</span><textarea id="intent" placeholder="Publish atelier and open the first issues in Deep-Agent-Folder.">${esc(state.intent)}</textarea></label><div class="row actions"><button class="btn" id="make-plan" ${state.busy ? "disabled" : ""}>${state.busy ? "Reading repos…" : "Make plan"}</button><button class="btn ghost" id="execute" ${!state.plan || state.busy ? "disabled" : ""}>${filing}</button><button class="btn ghost tiny" id="save-plan" ${!state.plan || state.busy ? "disabled" : ""}>Keep a copy</button></div>${state.plan ? `<p class="hint">Filing opens GitHub issues in the repositories below. A copy can live in atelier/workspace/plans.</p>` : ""}${state.error ? `<p class="err">${esc(state.error)}</p>` : ""}${state.notice ? `<p class="ok">${esc(state.notice)}</p>` : ""}</div>${state.plan ? renderPlan(state.plan) : `<p class="empty">Name the outcome. atelier will choose the repos and the next slices.</p>`}</section>`;
 }
 function renderPlan(plan) {
-  return `<div class="plan"><p class="kicker">${esc(plan.method)} · ${esc(plan.goal || "work")}</p><h3>${esc(plan.intent)}</h3><p class="sub">${esc(plan.summary)}</p><ol class="trace">${(plan.trace || []).map((t) => `<li><span>${esc(t.step)}</span>${esc(t.text)}</li>`).join("")}</ol>${plan.tasks.map((t) => `<div class="task"><div class="repo">${esc(t.repo)}${t.depends ? ` · after ${esc(t.depends)}` : ""}</div><div class="t">${esc(t.title)}</div><div class="m">${esc(t.why)}</div></div>`).join("")}</div>`;
+  const repos = [...new Set((plan.tasks || []).map((t) => t.repo))];
+  const n = (plan.tasks || []).length;
+  return `<div class="plan"><p class="kicker">${n} slice${n === 1 ? "" : "s"}</p><h3>${esc(plan.intent)}</h3><p class="consequence">Filing will open ${n} issue${n === 1 ? "" : "s"} in ${repos.map(esc).join(", ")}.</p>${(plan.tasks || []).map((t, i) => `<div class="task"><div class="repo">${i + 1} · ${esc(t.name || t.repo)}</div><div class="t">${esc(t.title)}</div><div class="m">${esc(t.why)}</div></div>`).join("")}<details class="why"><summary>Why this order</summary><p>${esc(plan.summary || "")}</p></details></div>`;
 }
 function repoView() {
   const r = state.repoDetail;
@@ -99,14 +103,14 @@ async function persistPlan() {
     const slug = slugify(state.plan.intent); const path = `workspace/plans/${slug}.md`; let sha;
     try { const existing = await GH.contents(state.user.login, GH.controlRepo, path); sha = existing.sha; } catch {}
     await GH.putFile(state.user.login, GH.controlRepo, path, Agent.toMarkdown(state.plan), `atelier: plan ${slug}`, sha);
-    state.notice = `Saved to ${GH.controlRepo}/${path}`;
+    state.notice = `Kept a copy in ${GH.controlRepo}/${path}`;
   } catch (e) { state.error = e.message; } finally { state.busy = false; render(); }
 }
 async function executePlan() {
   if (!state.plan) return; state.busy = true; state.error = ""; state.notice = ""; render(); const opened = [];
   try {
     for (const task of state.plan.tasks) { const issue = await GH.createIssue(task.owner, task.name, task.title, task.body, task.labels); opened.push(`${task.repo}#${issue.number}`); }
-    await persistPlanQuiet(); state.notice = `Opened ${opened.join(", ")}`; await refresh(); state.view = "work";
+    await persistPlanQuiet(); state.notice = `Filed ${opened.join(", ")}. They are on Work.`; await refresh();
   } catch (e) { state.error = opened.length ? `Opened ${opened.join(", ")} then stopped: ${e.message}` : e.message; } finally { state.busy = false; render(); }
 }
 async function persistPlanQuiet() {
