@@ -1,0 +1,55 @@
+name: agent
+
+on:
+  workflow_dispatch:
+    inputs:
+      brief:
+        description: Intent to plan
+        required: true
+        type: string
+      slug:
+        description: Plan filename slug
+        required: false
+        default: run
+        type: string
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Write brief
+        env:
+          BRIEF: ${{ inputs.brief }}
+          SLUG: ${{ inputs.slug }}
+        run: |
+          mkdir -p workspace/runs workspace/plans
+          DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          cat > "workspace/runs/${SLUG}.md" <<EOF
+          # Agent run
+
+          - created: ${DATE}
+          - actor: ${{ github.actor }}
+
+          ## Brief
+
+          ${BRIEF}
+
+          ## Note
+
+          This workflow is the compute plane. Attach XAI_API_KEY or OPENAI_API_KEY
+          as a repository secret to let a model draft the plan. Until then the
+          browser atelier composes plans with a native heuristic and writes issues
+          through the GitHub API.
+          EOF
+      - name: Commit artifacts
+        run: |
+          git config user.name "atelier-agent"
+          git config user.email "atelier-agent@users.noreply.github.com"
+          git add workspace
+          git diff --cached --quiet || git commit -m "atelier: agent run ${{ inputs.slug }}"
+          git push
