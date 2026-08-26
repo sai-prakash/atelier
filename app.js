@@ -31,7 +31,7 @@ function emptyView() {
 function orderView() {
   const plan = state.plan; const sl = plan.slice;
   if (!sl) return `<section class="panel desk"><p class="kicker">Nothing to open</p><h2 class="display">${esc(plan.intent)}</h2><p class="consequence">${esc(plan.summary || "")}</p><div class="row actions"><button class="btn ghost" id="start-over">Start over</button></div></section>`;
-  return `<section class="panel desk"><p class="kicker">${esc(sl.repo)}</p><h2 class="display">${esc(sl.title)}</h2><p class="consequence">${sl.continues ? `#${sl.continues}` : "New issue"}${sl.branch ? ` · ${esc(sl.branch)}` : ""}${sl.spec ? ` · ${esc(sl.spec)}` : ""}</p><div class="row actions"><button class="btn" id="start-sit" ${state.busy ? "disabled" : ""}>Sit</button><button class="btn ghost tiny" id="start-over">Start over</button></div>${state.error ? `<p class="err">${esc(state.error)}</p>` : ""}${state.notice ? `<p class="ok">${esc(state.notice)}</p>` : ""}${renderOrder(sl)}</section>`;
+  return `<section class="panel desk"><p class="kicker">${esc(sl.repo)}</p><h2 class="display">${esc(sl.title)}</h2><p class="consequence">${sl.continues ? `#${sl.continues}` : "New issue"}${sl.branch ? ` · ${esc(sl.branch)}` : ""}${sl.spec ? ` · ${esc(sl.spec)}` : ""}</p><div class="row actions"><button class="btn" id="start-sit" ${state.busy ? "disabled" : ""}>Sit</button> <button class="btn ghost tiny" id="start-over">Start over</button></div>${state.error ? `<p class="err">${esc(state.error)}</p>` : ""}${state.notice ? `<p class="ok">${esc(state.notice)}</p>` : ""}${renderOrder(sl)}</section>`;
 }
 function sittingView() {
   const sl = state.sitting;
@@ -72,7 +72,7 @@ function bindView() {
   const over = $("#start-over"); if (over) over.onclick = () => { state.plan = null; state.sitting = null; state.notice = ""; state.view = "desk"; render(); };
   const mark = $("#mark-done"); if (mark) mark.onclick = markSliceDone;
   const endSit = $("#leave-sit"); if (endSit) endSit.onclick = () => { state.sitting = null; state.notice = ""; state.view = "desk"; render(); };
-  const use = $("#use-repo"); if (use) use.onclick = () => { if (!state.estateRepo) return; state.intent = `Advance ${state.estateRepo.repo.name}: next complete slice.`; state.plan = null; state.sitting = null; state.view = "desk"; render(); };
+  const use = $("#use-repo"); if (use) use.onclick = () => { if (!state.estateRepo) return; const full = state.estateRepo.repo.full_name; state.intent = "Finish one slice in " + full + ". No new repository."; state.plan = null; state.sitting = null; state.view = "desk"; render(); composePlan(); };
   const saveTok = $("#save-token"); if (saveTok) saveTok.onclick = async () => { try { await boot($("#retoken").value.trim()); } catch (e) { state.error = e.message; render(); } };
   const leave = $("#leave"); if (leave) leave.onclick = () => { localStorage.removeItem(STORE.token); state.user = null; state.token = ""; render(); };
 }
