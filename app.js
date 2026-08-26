@@ -31,14 +31,14 @@ function emptyView() {
 function orderView() {
   const plan = state.plan; const sl = plan.slice;
   if (!sl) return `<section class="panel desk"><p class="kicker">Nothing to open</p><h2 class="display">${esc(plan.intent)}</h2><p class="consequence">${esc(plan.summary || "")}</p><div class="row actions"><button class="btn ghost" id="start-over">Start over</button></div></section>`;
-  return `<section class="panel desk"><p class="kicker">${esc(sl.repo)}</p><h2 class="display">${esc(sl.title)}</h2><p class="consequence">${sl.continues ? `#${sl.continues}` : "New issue"}${sl.branch ? ` · ${esc(sl.branch)}` : ""}${sl.spec ? ` · ${esc(sl.spec)}` : ""}</p><div class="row actions"><button class="btn" id="start-sit" ${state.busy ? "disabled" : ""}>Sit</button> <button class="btn ghost tiny" id="start-over">Start over</button></div>${state.error ? `<p class="err">${esc(state.error)}</p>` : ""}${state.notice ? `<p class="ok">${esc(state.notice)}</p>` : ""}${renderOrder(sl)}</section>`;
+  return `<section class="panel desk"><p class="kicker">${esc(sl.repo)}</p><h2 class="display">${esc(sl.title)}</h2><p class="consequence">${sl.continues ? `#${sl.continues}` : "File slice"}${sl.branch ? ` · ${esc(sl.branch)}` : ""}${sl.spec ? ` · ${esc(sl.spec)}` : ""}</p><div class="row actions"><button class="btn" id="start-sit" ${state.busy ? "disabled" : ""}>Sit</button> <button class="btn ghost tiny" id="start-over">Start over</button></div>${state.error ? `<p class="err">${esc(state.error)}</p>` : ""}${state.notice ? `<p class="ok">${esc(state.notice)}</p>` : ""}${renderOrder(sl)}</section>`;
 }
 function sittingView() {
   const sl = state.sitting;
   const issueUrl = sl.url || (sl.continues ? `https://github.com/${sl.repo}/issues/${sl.continues}` : `https://github.com/${sl.repo}`);
   const specUrl = sl.spec ? `https://github.com/${sl.repo}/blob/${sl.branch || "main"}/${sl.spec}` : "";
   const editUrl = sl.spec ? `https://github.dev/${sl.repo}/blob/${sl.branch || "main"}/${sl.spec}` : `https://github.dev/${sl.repo}`;
-  return `<section class="panel desk"><p class="kicker">Sitting</p><h2 class="display">${esc(sl.title)}</h2><p class="consequence">${esc(sl.repo)}${sl.continues ? ` · #${sl.continues}` : ""}${sl.branch ? ` · ${esc(sl.branch)}` : ""}</p><div class="row actions"><button class="btn" id="mark-done" ${state.busy || sl.ticked ? "disabled" : ""}>${sl.ticked ? "Slice marked" : "Mark done"}</button><button class="btn ghost tiny" id="leave-sit">End sitting</button></div><div class="doors">${sl.continues ? `<a class="door" href="${esc(issueUrl)}" target="_blank" rel="noreferrer">Issue</a>` : ""}${specUrl ? `<a class="door" href="${esc(specUrl)}" target="_blank" rel="noreferrer">Spec</a>` : ""}<a class="door" href="${esc(editUrl)}" target="_blank" rel="noreferrer">Edit</a></div>${state.error ? `<p class="err">${esc(state.error)}</p>` : ""}${state.notice ? `<p class="ok">${esc(state.notice)}</p>` : ""}<p class="kicker">Spec</p><div class="log">${esc(sl.specExcerpt || sl.specMissing || "No spec on this slice.")}</div><p class="kicker">Tree</p>${(sl.treeBrief || ["No tree search yet."]).map((t) => `<div class="m">${esc(t)}</div>`).join("")}${renderOrder(sl)}</section>`;
+  return `<section class="panel desk"><p class="kicker">Sitting</p><h2 class="display">${esc(sl.title)}</h2><p class="consequence">${esc(sl.repo)}${sl.continues ? ` · #${sl.continues}` : ""}</p><div class="row actions"><button class="btn" id="mark-done" ${state.busy || sl.ticked || !sl.continues ? "disabled" : ""}>${sl.ticked ? "Slice marked" : sl.continues ? "Mark done" : "No box to tick"}</button><button class="btn ghost tiny" id="leave-sit">End sitting</button></div><div class="doors">${sl.continues ? `<a class="door" href="${esc(issueUrl)}" target="_blank" rel="noreferrer">Issue</a>` : ""}${specUrl ? `<a class="door" href="${esc(specUrl)}" target="_blank" rel="noreferrer">Spec</a>` : ""}<a class="door" href="${esc(editUrl)}" target="_blank" rel="noreferrer">Edit</a></div>${state.error ? `<p class="err">${esc(state.error)}</p>` : ""}${state.notice ? `<p class="ok">${esc(state.notice)}</p>` : ""}<p class="kicker">Spec</p><div class="log">${esc(sl.specExcerpt || sl.specMissing || "No spec on this slice.")}</div><p class="kicker">Tree</p>${(sl.treeBrief || []).map((t) => `<div class="m">${esc(t)}</div>`).join("")}${renderOrder(sl)}</section>`;
 }
 function renderOrder(sl) {
   return `${(sl.do || []).length ? `<p class="kicker">Do this sitting</p>${sl.do.map((d, i) => `<div class="task"><div class="repo">${i + 1}</div><div class="t">${esc(d)}</div></div>`).join("")}` : ""}${(sl.done || []).length ? `<p class="kicker">Done when</p>${sl.done.map((d) => `<div class="m">${esc(d)}</div>`).join("")}` : ""}${(sl.dont || []).length ? `<p class="kicker">Do not</p>${sl.dont.map((d) => `<div class="m">— ${esc(d)}</div>`).join("")}` : ""}`;
@@ -51,7 +51,7 @@ function repoView() {
   const r = state.estateRepo;
   if (!r) return `<section class="panel"><p class="empty">Select a repository.</p></section>`;
   const repo = r.repo; const issues = (r.issues || []).filter((i) => !i.pull_request);
-  return `<section class="panel"><p class="kicker">Estate</p><h2 class="display">${esc(repo.name)}</h2><p class="sub">${esc(repo.description || "")}</p><div class="row"><button class="btn" id="use-repo">Use this repo</button></div><p class="kicker">Open issues</p><div class="list">${issues.length ? issues.map((it) => `<div class="item"><div><div class="t">${esc(it.title)}</div><div class="m">#${it.number}</div></div><button class="pill on" data-sit-issue="${esc(repo.full_name)}#${it.number}" data-sit-title="${esc(it.title)}" data-sit-url="${esc(it.html_url)}">Sit</button></div>`).join("") : `<p class="empty">No open issues.</p>`}</div><p class="kicker">Last commits</p><div class="list">${(r.commits || []).slice(0, 3).map((c) => `<div class="item"><div><div class="t">${esc(((c.commit && c.commit.message) || "").split("\n")[0])}</div><div class="m">${rel(c.commit && c.commit.author && c.commit.author.date)}</div></div></div>`).join("")}</div></section>`;
+  return `<section class="panel"><p class="kicker">Estate</p><h2 class="display">${esc(repo.name)}</h2><p class="sub">${esc(repo.description || "")}</p><div class="row"><button class="btn" id="use-repo">Use this repo</button></div><p class="kicker">Open issues</p><div class="list">${issues.length ? issues.map((it) => `<div class="item"><div><div class="t">${esc(it.title)}</div><div class="m">#${it.number}</div></div><button class="pill on" data-sit-issue="${esc(repo.full_name)}#${it.number}" data-sit-title="${esc(it.title)}" data-sit-url="${esc(it.html_url)}">Sit</button></div>`).join("") : `<p class="empty">No open issues. Use this repo to sit on a file.</p>`}</div><p class="kicker">Last commits</p><div class="list">${(r.commits || []).slice(0, 3).map((c) => `<div class="item"><div><div class="t">${esc(((c.commit && c.commit.message) || "").split("\n")[0])}</div><div class="m">${rel(c.commit && c.commit.author && c.commit.author.date)}</div></div></div>`).join("")}</div></section>`;
 }
 function keysView() {
   return `<section class="panel settings"><p class="kicker">Keys</p><h2 class="display">The token stays in this browser.</h2><label class="field"><span class="label">Token</span><input id="retoken" type="password" value="${esc(state.token)}" /></label><div class="row"><button class="btn" id="save-token">Save</button><button class="btn ghost" id="leave">Sign out</button></div></section>`;
@@ -102,7 +102,11 @@ async function composePlan() {
       const repo = pick.repo; const [owner, name] = repo.full_name.split("/");
       const [commits, readme, issues, rootItems] = await Promise.all([GH.commits(owner, name, 6).catch(() => []), GH.readme(owner, name).catch(() => ""), GH.repoIssues(owner, name, 10).catch(() => []), GH.rootTree(owner, name).catch(() => [])]);
       const root = (rootItems || []).map((i) => i.name || i);
-      evidence.push({ full: repo.full_name, owner, name, lang: repo.language, pushed: repo.pushed_at, open: repo.open_issues_count || 0, desc: repo.description || "", homepage: repo.homepage || "", score: pick.score, readme, root, commits: (commits || []).map((c) => (c.commit && c.commit.message) || ""), issues: (issues || []).filter((i) => !i.pull_request).map((i) => ({ number: i.number, title: i.title, body: i.body || "", html_url: i.html_url || "", updated_at: i.updated_at })) });
+      let files = [];
+      if (commits && commits[0] && commits[0].sha && GH.commit) {
+        try { const detail = await GH.commit(owner, name, commits[0].sha); files = (detail.files || []).map((f) => f.filename); } catch {}
+      }
+      evidence.push({ full: repo.full_name, owner, name, lang: repo.language, pushed: repo.pushed_at, open: repo.open_issues_count || 0, desc: repo.description || "", homepage: repo.homepage || "", score: pick.score, readme, root, files, commits: (commits || []).map((c) => (c.commit && c.commit.message) || ""), issues: (issues || []).filter((i) => !i.pull_request).map((i) => ({ number: i.number, title: i.title, body: i.body || "", html_url: i.html_url || "", updated_at: i.updated_at })) });
     }
     state.plan = Agent.reason(state.intent, state.snapshot, evidence);
   } catch (e) { state.error = e.message; } finally { state.busy = false; render(); }
@@ -115,14 +119,13 @@ async function startSitting() {
 }
 async function sitFromIssue(ref, title, url) {
   const parts = String(ref || "").split("#"); const repo = parts[0] || ""; const num = Number(parts[1] || 0); const bits = repo.split("/");
-  state.intent = `Continue ${repo}#${num}`; state.plan = null;
-  state.sitting = { repo, owner: bits[0], name: bits[1], title: title || repo, continues: num, url: url || "", kind: "continue", branch: null, spec: null, ticked: false, do: ["Do the next empty box on #" + num + ".", "Do not open a second issue."], done: ["The next box on #" + num + " is checked"], dont: ["A second issue next to #" + num], specExcerpt: "", specMissing: "", treeBrief: [] };
+  state.sitting = { repo, owner: bits[0], name: bits[1], title: title || repo, continues: num, url: url || "", kind: "continue", ticked: false, do: ["Do the next empty box on #" + num + "."], done: ["The next box on #" + num + " is checked"], dont: ["A second issue"], specExcerpt: "", specMissing: "", treeBrief: [] };
   state.view = "desk"; state.busy = true; render();
   try {
     const issue = await GH.issue(bits[0], bits[1], num); const body = issue.body || "";
     const boxes = String(body).split("\n").map((line) => { const m = line.match(/^\s*[-*+]\s*\[( |x|X)\]\s*(.+)$/); return m ? { checked: m[1].toLowerCase() === "x", text: m[2].trim() } : null; }).filter(Boolean);
     const openBox = boxes.find((b) => !b.checked);
-    if (openBox) { state.sitting.title = openBox.text.replace(/\*\*/g, ""); state.sitting.do = ["Do only this box: " + state.sitting.title, "Do not start the later boxes."]; }
+    if (openBox) state.sitting.title = openBox.text.replace(/\*\*/g, "");
     const br = body.match(/\bbranch(?:\s+name)?\s*[:\-]?\s*`?((?:feat|fix|chore)\/[A-Za-z0-9._/-]+)`?/i);
     const sp = body.match(/((?:docs|spec|specs|superpowers)\/[A-Za-z0-9._/-]+\.md)/);
     if (br) state.sitting.branch = br[1]; if (sp) state.sitting.spec = sp[1];
@@ -135,56 +138,39 @@ async function enrichSitting(sl) {
     const text = await GH.fileText(sl.owner, sl.name, sl.spec, sl.branch || "main") || await GH.fileText(sl.owner, sl.name, sl.spec);
     if (!text) sl.specMissing = "Spec not in the tree: " + sl.spec;
     else sl.specExcerpt = specSection(text, sl.title);
-  } else sl.specMissing = "No spec path on this issue.";
-  const forbidLive = /no live/i.test(sl.title || "");
+  } else sl.specMissing = "No spec path on this slice.";
   const hits = await GH.searchCode(`repo:${sl.repo} Live`);
-  if (hits.length) { const paths = hits.slice(0, 4).map((h) => h.path).filter(Boolean); brief.push(forbidLive ? ("Live still in " + paths.join(", ")) : ("Live appears in " + paths.join(", "))); sl.liveHits = paths; }
-  else { brief.push(forbidLive ? "No Live hit in code search (or search is not granted on this token)." : "No Live hit in code search."); sl.liveHits = []; }
-  if (sl.spec && sl.specExcerpt) brief.push("Spec section loaded for this box.");
+  sl.liveHits = hits.map((h) => h.path).filter(Boolean).slice(0, 4);
+  brief.push(sl.liveHits.length ? ("Live in " + sl.liveHits.join(", ")) : "No Live hit in code search.");
   sl.treeBrief = brief;
 }
 function specSection(md, title) {
   const id = (String(title).match(/\bG\d+\b/) || [])[0]; const lines = String(md || "").split("\n");
   if (!id) return lines.slice(0, 28).join("\n");
-  let start = lines.findIndex((l) => l.indexOf(id) >= 0); if (start < 0) start = 0; let end = lines.length;
-  for (let i = start + 1; i < lines.length; i++) { if (/^#{1,3}\s/.test(lines[i]) && /\bG\d+\b/.test(lines[i]) && lines[i].indexOf(id) < 0) { end = i; break; } }
-  return lines.slice(start, Math.min(end, start + 36)).join("\n");
+  let start = lines.findIndex((l) => l.indexOf(id) >= 0); if (start < 0) start = 0;
+  return lines.slice(start, start + 36).join("\n");
 }
 async function markSliceDone() {
   const sl = state.sitting;
-  if (!sl || !sl.continues) { state.error = "This sitting has no issue to tick."; render(); return; }
+  if (!sl || !sl.continues) { state.error = "No issue box to tick. Commit the file."; render(); return; }
   state.busy = true; state.error = ""; state.notice = ""; render();
   try {
-    await enrichSitting(sl);
-    if (/no live/i.test(sl.title || "") && sl.liveHits && sl.liveHits.length) { state.error = "Still in the tree: " + sl.liveHits[0]; state.busy = false; render(); return; }
-    if (sl.spec && sl.specMissing) { state.error = sl.specMissing; state.busy = false; render(); return; }
     const issue = await GH.issue(sl.owner, sl.name, sl.continues);
     const next = checkFirstOpenBox(issue.body || "", sl.title);
-    if (!next.changed) state.notice = "No empty checkbox left on #" + sl.continues + ".";
+    if (!next.changed) state.notice = "No empty checkbox left.";
     else {
       await GH.patchIssue(sl.owner, sl.name, sl.continues, { body: next.body });
-      await GH.comment(sl.owner, sl.name, sl.continues, "atelier verified, then marked the slice.\n\n" + (sl.title || ""));
-      sl.ticked = true; state.sitting = sl; state.notice = "Checked the box on " + sl.repo + "#" + sl.continues + ".";
-      await rememberSitting(sl, "done");
+      sl.ticked = true; state.notice = "Checked the box on " + sl.repo + "#" + sl.continues + ".";
     }
   } catch (e) { state.error = e.message; } finally { state.busy = false; render(); }
 }
 function checkFirstOpenBox(body, hint) {
-  const lines = String(body || "").split("\n"); const hintBits = String(hint || "").toLowerCase().replace(/\*\*/g, "").slice(0, 18);
-  let idx = lines.findIndex((ln) => /^\s*[-*+]\s*\[ \]\s*/.test(ln) && (!hintBits || ln.toLowerCase().indexOf(hintBits.slice(0, 6)) >= 0));
-  if (idx < 0) idx = lines.findIndex((ln) => /^\s*[-*+]\s*\[ \]\s*/.test(ln));
+  const lines = String(body || "").split("\n");
+  let idx = lines.findIndex((ln) => /^\s*[-*+]\s*\[ \]\s*/.test(ln));
   if (idx < 0) return { changed: false, body };
   lines[idx] = lines[idx].replace("[ ]", "[x]");
   return { changed: true, body: lines.join("\n") };
 }
-async function rememberSitting(sl, result) {
-  const path = "workspace/sittings.md"; const line = `- ${new Date().toISOString().slice(0, 16)} ${sl.repo}#${sl.continues} · ${sl.title} · ${result}\n`;
-  try {
-    let sha, prev = "";
-    try { const existing = await GH.contents(state.user.login, GH.controlRepo, path); sha = existing.sha; prev = decodeURIComponent(escape(atob(String(existing.content || "").replace(/\n/g, "")))); } catch {}
-    await GH.putFile(state.user.login, GH.controlRepo, path, prev + line, "atelier: sitting " + result, sha);
-  } catch {}
-}
-function rel(date) { if (!date) return ""; const d = (Date.now() - new Date(date).getTime()) / 1000; if (d < 60) return "just now"; if (d < 3600) return `${Math.floor(d / 60)}m ago`; if (d < 86400) return `${Math.floor(d / 3600)}h ago`; if (d < 604800) return `${Math.floor(d / 86400)}d ago`; return new Date(date).toLocaleDateString(); }
+function rel(date) { if (!date) return ""; const d = (Date.now() - new Date(date).getTime()) / 1000; if (d < 3600) return `${Math.floor(d / 60)}m ago`; if (d < 86400) return `${Math.floor(d / 3600)}h ago`; if (d < 604800) return `${Math.floor(d / 86400)}d ago`; return new Date(date).toLocaleDateString(); }
 function esc(s) { const map = { "&": "\u0026amp;", "<": "\u0026lt;", ">": "\u0026gt;", '"': "\u0026quot;" }; return String(s ?? "").replace(/[&<>"]/g, (c) => map[c]); }
 try { if (state.token) boot(state.token).catch(() => { state.user = null; render(); }); else render(); } catch (e) { document.getElementById("app").textContent = e.message; }
