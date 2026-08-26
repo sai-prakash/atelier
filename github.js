@@ -36,20 +36,36 @@ const GH = {
     const data = await this.req(`/search/issues?q=${encodeURIComponent(q)}&per_page=${perPage}`);
     return data.items || [];
   },
-  async repoIssues(owner, repo, perPage = 10) {
+  async repoIssues(owner, repo, perPage = 12) {
     try { return await this.req(`/repos/${owner}/${repo}/issues?state=open&per_page=${perPage}`); } catch { return []; }
   },
   async rootTree(owner, repo) {
     try {
       const items = await this.req(`/repos/${owner}/${repo}/contents/`);
-      return (Array.isArray(items) ? items : []).map((i) => i.name);
+      return (Array.isArray(items) ? items : []).map((i) => ({ name: i.name, type: i.type, path: i.path }));
     } catch { return []; }
   },
   async commits(owner, repo, perPage = 8) { return this.req(`/repos/${owner}/${repo}/commits?per_page=${perPage}`); },
   async readme(owner, repo) {
-    try { const file = await this.req(`/repos/${owner}/${repo}/readme`); return atob(file.content.replace(/\n/g, "")); } catch { return ""; }
+    try { const file = await this.req(`/repos/${owner}/${repo}/readme`); return decodeB64(file.content); } catch { return ""; }
   },
   async contents(owner, repo, path) { return this.req(`/repos/${owner}/${repo}/contents/${path}`); },
+  async fileText(owner, repo, path, ref) {
+    try {
+      const q = ref ? `?ref=${encodeURIComponent(ref)}` : "";
+      const file = await this.req(`/repos/${owner}/${repo}/contents/${path}${q}`);
+      if (!file || !file.content) return "";
+      return decodeB64(file.content);
+    } catch { return ""; }
+  },
+  async searchCode(query, perPage = 6) {
+    try {
+      const data = await this.req(`/search/code?q=${encodeURIComponent(query)}&per_page=${perPage}`, {
+        headers: { Accept: "application/vnd.github.text-match+json" },
+      });
+      return data.items || [];
+    } catch { return []; }
+  },
   async putFile(owner, repo, path, content, message, sha) {
     const body = { message, content: btoa(unescape(encodeURIComponent(content))), branch: "main" };
     if (sha) body.sha = sha;
@@ -65,13 +81,8 @@ const GH = {
   async comment(owner, repo, number, body) {
     return this.req(`/repos/${owner}/${repo}/issues/${number}/comments`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ body }) });
   },
-  async closeIssue(owner, repo, number) {
-    return this.req(`/repos/${owner}/${repo}/issues/${number}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ state: "closed" }) });
-  },
-  async dispatch(owner, repo, workflow, ref, inputs) {
-    return this.req(`/repos/${owner}/${repo}/actions/workflows/${workflow}/dispatches`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ref, inputs }) });
-  },
   async events(login) { return this.req(`/users/${login}/events?per_page=30`); },
-  async pulls(owner, repo) { return this.req(`/repos/${owner}/${repo}/pulls?state=open&per_page=20`); },
-  async languages(owner, repo) { try { return this.req(`/repos/${owner}/${repo}/languages`); } catch { return {}; } },
 };
+function decodeB64(content) {
+  return decodeURIComponent(escape(atob(String(content || "").replace(/\n/g, ""))));
+}
