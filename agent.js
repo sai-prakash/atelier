@@ -5,10 +5,7 @@ const Agent = {
     const active = repos.filter((r) => now - new Date(r.pushed_at).getTime() < week);
     const stale = repos.filter((r) => now - new Date(r.pushed_at).getTime() > 90 * 24 * 3600 * 1000 && !r.archived);
     const byLang = {};
-    repos.forEach((r) => {
-      const lang = r.language || "Other";
-      byLang[lang] = (byLang[lang] || 0) + 1;
-    });
+    repos.forEach((r) => { const lang = r.language || "Other"; byLang[lang] = (byLang[lang] || 0) + 1; });
     return {
       totals: { repos: repos.length, private: repos.filter((r) => r.private).length, active: active.length, stale: stale.length, issues: issues.length, pulls: pulls.length },
       languages: Object.entries(byLang).sort((a, b) => b[1] - a[1]).slice(0, 6),
@@ -33,14 +30,13 @@ const Agent = {
     const slice = pickSlice(text, inspections, snapshot);
     const created = new Date().toISOString();
     if (!slice || slice.kind === "none") {
-      const cold = inspections.slice(0, 4).map((x) => x.full + ": " + x.note);
-      return { intent: text, created, method: "work-order", mode: "none", summary: (slice && slice.why) || "Nothing to open.", slice: null, tasks: [], dont: ["New repository", "A second issue next to unfinished work", "More planning files"], evidence: cold, inspections };
+      return { intent: text, created, method: "work-order", mode: "none", summary: (slice && slice.why) || "Nothing to open.", slice: null, tasks: [], dont: ["New repository", "A second issue next to unfinished work", "More planning files"], evidence: inspections.slice(0, 4).map((x) => x.full + ": " + x.note), inspections };
     }
     const task = workOrder(text, slice);
     return { intent: text, created, method: "work-order", mode: slice.kind, summary: slice.why, slice: task, tasks: [task], dont: task.dont, evidence: task.evidence, inspections };
   },
   toMarkdown(plan) {
-    if (!plan.slice) return ["# " + plan.intent, "", "NOTHING TO OPEN", "", plan.summary, "", "## Do not", ...(plan.dont || []).map((d) => "- " + d), "", "## Estate", ...(plan.evidence || []).map((e) => "- " + e)].join("\n");
+    if (!plan.slice) return ["# " + plan.intent, "", "NOTHING TO OPEN", "", plan.summary, "", "## Do not", ...(plan.dont || []).map((d) => "- " + d)].join("\n");
     return plan.slice.body;
   },
 };
@@ -102,11 +98,18 @@ function pickSlice(intent, inspections) {
     if (ev.continueIssue && ev.firstUnchecked) return { kind: "continue", ev, issue: ev.continueIssue, box: ev.firstUnchecked, title: cleanTitle(ev.firstUnchecked.text).slice(0, 92), why: "Open issue #" + ev.continueIssue.number + " already has a checklist. The slice is the first empty box." };
   }
   for (const ev of ranked) {
-    if (ev.continueIssue) return { kind: "continue", ev, issue: ev.continueIssue, box: null, title: ev.continueIssue.title.slice(0, 92), why: "Open issue #" + ev.continueIssue.number + " has no boxes. Continue that title." };
+    if (ev.continueIssue) return { kind: "continue", ev, issue: ev.continueIssue, box: null, title: cleanTitle(ev.continueIssue.title).slice(0, 92), why: "Open issue #" + ev.continueIssue.number + " has no checklist. The slice is that issue, not a new file." };
+  }
+  const named = inspections.some((ev) => String(intent).toLowerCase().includes(ev.name.toLowerCase()));
+  const noInvent = noNew || named || /advance |finish one slice|use this repo/i.test(intent);
+  if (noInvent && !ranked.find((e) => e.open > 0)) {
+    const ev = ranked[0];
+    return { kind: "none", why: (ev ? ev.full : "This repo") + " has no unfinished issue. Sit on an issue, or name a file. atelier will not invent AGENTS.md." };
   }
   for (const ev of ranked) {
+    if (noInvent) break;
     if (!ev.hasReadme || !ev.hasAgents) {
-      if (noNew && ev.open === 0 && ev.docsHeavy) continue;
+      if (ev.open === 0 && ev.docsHeavy) continue;
       return { kind: "open", ev, issue: null, box: null, title: !ev.hasReadme ? "Write README so a cold start is possible" : "Write AGENTS.md from the last commits", why: ev.full + " is missing " + (!ev.hasReadme ? "README" : "AGENTS.md") + "." };
     }
   }
@@ -134,7 +137,7 @@ function workOrder(intent, slice) {
   if (branch && spec && (branch === spec || /\.[a-z0-9]{1,5}$/i.test(branch))) branch = null;
   const continues = issue ? issue.number : null; const title = slice.title;
   const doSteps = buildDo(slice, branch, spec); const done = buildDone(slice); const dont = buildDont(intent, slice); const evidence = buildEvidence(ev, slice);
-  const body = ["# " + title, "", "INTENT " + intent, "REPO " + ev.full, "SLICE " + title, continues ? ("CONTINUE issue #" + continues + (branch ? " | branch " + branch : "") + (spec ? " | spec " + spec : "")) : "CONTINUE new issue", "", "## Do this sitting", ...doSteps.map((s, i) => (i + 1) + ". " + s), "", "## Done when", ...done.map((s) => "- [ ] " + s), "", "## Do not", ...dont.map((s) => "- " + s), "", "## Evidence", ...evidence.map((s) => "- " + s), "", "_Work order from GitHub evidence. atelier did not invent a second issue._"].join("\n");
+  const body = ["# " + title, "", "INTENT " + intent, "REPO " + ev.full, "SLICE " + title, continues ? ("CONTINUE issue #" + continues + (branch ? " | branch " + branch : "") + (spec ? " | spec " + spec : "")) : "CONTINUE new issue", "", "## Do this sitting", ...doSteps.map((s, i) => (i + 1) + ". " + s), "", "## Done when", ...done.map((s) => "- [ ] " + s), "", "## Do not", ...dont.map((s) => "- " + s), "", "## Evidence", ...evidence.map((s) => "- " + s), ""].join("\n");
   return { id: "01", repo: ev.full, owner: ev.owner, name: ev.name, title, slice: title, continues, branch, spec, url: issue && issue.url, kind: slice.kind, do: doSteps, done, dont, evidence, why: slice.why, labels: ["atelier"], body };
 }
 function buildDo(slice, branch, spec) {
@@ -150,11 +153,17 @@ function buildDo(slice, branch, spec) {
     steps.push("Tick that box on #" + issue.number + ". Leave the other boxes.");
     return steps.slice(0, 5);
   }
-  if (slice.kind === "continue") return ["Open #" + issue.number + " and work the title as written.", "Do not open a second issue in " + ev.name + ".", "Stop when the issue can close or the next checkbox appears."];
-  if (/README/.test(slice.title)) return ["Write README.md from the last commits.", "State how a stranger starts, in three steps.", "Commit on main."];
+  if (slice.kind === "continue") {
+    const steps = [];
+    if (issue && issue.branch) steps.push("git checkout " + issue.branch + " (create it from main if missing).");
+    steps.push("Open #" + issue.number + ": " + cleanTitle(issue.title) + ".");
+    if (issue && issue.spec) steps.push("The spec file is " + issue.spec + " — a file, not a branch.");
+    steps.push("Do not open a second issue in " + ev.name + ".");
+    return steps.slice(0, 4);
+  }
+  if (/README/.test(slice.title)) return ["Write README.md from the last commits.", "State how a stranger starts, in three steps."];
   if (/AGENTS/.test(slice.title)) return ["Write AGENTS.md from the last commits.", "Say what not to touch."];
-  if (/Pages URL/.test(slice.title)) return ["Enable Pages on main if it is not on.", "Put the Live URL in the first ten lines of the README."];
-  return ["Open " + ev.full + " and change only the named file.", "Do not add a repository.", "Commit when the done-when is true."];
+  return ["Open " + ev.full + " and change only the named file.", "Do not add a repository."];
 }
 function buildDone(slice) {
   if (slice.kind === "continue" && slice.box) return [cleanTitle(slice.box.text) + " is checked on #" + slice.issue.number, "No new issue was opened in this repo"];
@@ -176,7 +185,6 @@ function buildEvidence(ev, slice) {
   const rows = [];
   if (slice.issue) rows.push(ev.name + "#" + slice.issue.number + " is open" + (slice.box ? " with an unchecked box: " + clip(cleanTitle(slice.box.text), 60) : ""));
   rows.push(ev.full + " last push " + ev.age + "d ago; last commit: " + (ev.commits[0] || "none"));
-  if (ev.docsHeavy) rows.push(ev.name + " recent commits are notes/docs");
   rows.push(ev.open ? ev.open + " open issue(s) seen" : "No open issues seen on this repo");
   return rows.slice(0, 4);
 }
