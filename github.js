@@ -56,6 +56,14 @@ const GH = {
     return data.items || [];
   },
 
+  async repoIssues(owner, repo, perPage = 8) {
+    try {
+      return await this.req(`/repos/${owner}/${repo}/issues?state=open&per_page=${perPage}`);
+    } catch {
+      return [];
+    }
+  },
+
   async commits(owner, repo, perPage = 8) {
     return this.req(`/repos/${owner}/${repo}/commits?per_page=${perPage}`);
   },
