@@ -42,6 +42,7 @@ input:focus, textarea:focus, select:focus { border-bottom-color: var(--ink); }
 .btn.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line-strong); }
 .btn.tiny { padding: 7px 12px; font-size: 12px; }
 .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.row.tight { gap: 6px; }
 .shell { display: grid; min-height: 100dvh; grid-template-rows: auto 1fr auto; }
 .top { display: flex; align-items: center; justify-content: space-between; padding: 18px 22px 10px; position: sticky; top: 0; background: color-mix(in srgb, var(--paper) 88%, transparent); backdrop-filter: blur(16px); z-index: 4; }
 .brand { font-family: var(--serif); font-size: 22px; letter-spacing: -0.03em; }
@@ -93,3 +94,6 @@ hr.rule { border: 0; border-top: 1px solid var(--line); margin: 28px 0; }
 .why summary { cursor: pointer; letter-spacing: 0.08em; text-transform: uppercase; font-size: 11px; color: var(--ink); list-style: none; }
 .why summary::-webkit-details-marker { display: none; }
 .why p { margin: 10px 0 0; max-width: 52ch; }
+.doors { display: flex; gap: 8px; flex-wrap: wrap; margin: 16px 0 8px; }
+.door { font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--mute); border-bottom: 1px solid var(--line-strong); padding-bottom: 2px; text-decoration: none; }
+.door:hover { color: var(--ink); }
