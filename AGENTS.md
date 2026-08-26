@@ -12,4 +12,4 @@ atelier is a static GitHub Pages product. Do not add a backend, database, or thi
 
 ## Change policy
 
-Prefer fewer files. Keep `github.js`, `agent.js`, and `app.js` as the runtime. If an LLM is added, it runs in Actions or in the browser with a user-supplied key. No proxy.
+Prefer fewer files. Keep `github.js`, `agent.js`, and `app.js` as the runtime. Planning must gather README, commits, and issues before it decides. If an LLM is added, it runs in Actions or in the browser with a user-supplied key. No proxy.
