@@ -4,151 +4,331 @@ const Agent = {
     const week = 7 * 24 * 3600 * 1000;
     const active = repos.filter((r) => now - new Date(r.pushed_at).getTime() < week);
     const stale = repos.filter((r) => now - new Date(r.pushed_at).getTime() > 90 * 24 * 3600 * 1000 && !r.archived);
-    const privateN = repos.filter((r) => r.private).length;
     const byLang = {};
     repos.forEach((r) => {
       const lang = r.language || "Other";
       byLang[lang] = (byLang[lang] || 0) + 1;
     });
-    const heat = repos.slice().sort((a, b) => new Date(b.pushed_at) - new Date(a.pushed_at)).slice(0, 8).map((r) => briefRepo(r));
-    const blockers = issues.filter((i) => (i.labels || []).some((l) => /block|p0|urgent|bug/i.test(l.name || l)));
-    const recent = (events || []).slice(0, 12).map((e) => ({ type: e.type, repo: e.repo && e.repo.name, at: e.created_at, title: summarizeEvent(e) }));
-    return { totals: { repos: repos.length, private: privateN, active: active.length, stale: stale.length, issues: issues.length, pulls: pulls.length }, languages: Object.entries(byLang).sort((a, b) => b[1] - a[1]).slice(0, 6), heat, blockers, recent, stale: stale.slice(0, 8).map((r) => r.full_name) };
+    return {
+      totals: {
+        repos: repos.length,
+        private: repos.filter((r) => r.private).length,
+        active: active.length,
+        stale: stale.length,
+        issues: issues.length,
+        pulls: pulls.length,
+      },
+      languages: Object.entries(byLang).sort((a, b) => b[1] - a[1]).slice(0, 6),
+      heat: repos.slice().sort((a, b) => new Date(b.pushed_at) - new Date(a.pushed_at)).slice(0, 8).map(briefRepo),
+      blockers: issues.filter((i) => (i.labels || []).some((l) => /block|p0|urgent|bug/i.test(l.name || l))),
+      recent: (events || []).slice(0, 12).map((e) => ({
+        type: e.type,
+        repo: e.repo && e.repo.name,
+        at: e.created_at,
+        title: summarizeEvent(e),
+      })),
+      stale: stale.slice(0, 8).map((r) => r.full_name),
+    };
   },
+
   candidates(intent, repos, snapshot) {
     const text = (intent || "").trim();
-    if (!text) throw new Error("Write what you want to do.");
-    return repos.map((repo) => ({ repo, score: scoreRepo(text, repo, snapshot), signals: signalsFor(text, repo) })).sort((a, b) => b.score - a.score).filter((c) => c.score > 0).slice(0, 4);
+    if (!text) throw new Error("Write the work in a sentence.");
+    const advance = isAdvance(text);
+    const ranked = repos.map((repo) => ({ repo, score: scoreRepo(text, repo, snapshot) })).sort((a, b) => b.score - a.score);
+    if (advance) return ranked.slice(0, 6);
+    return ranked.filter((c) => c.score > 0).slice(0, 5);
   },
+
   reason(intent, snapshot, evidence) {
     const text = (intent || "").trim();
-    if (!text) throw new Error("Write what you want to do.");
-    if (!evidence.length) throw new Error("No repositories scored against this intent.");
-    const verbs = detectVerbs(text);
-    const goal = classifyGoal(text);
-    const trace = [];
-    trace.push({ step: "Observe", text: `Estate: ${snapshot.totals.repos} repos, ${snapshot.totals.issues} open issues, ${snapshot.totals.pulls} open PRs, ${snapshot.totals.active} touched this week.` });
-    trace.push({ step: "Frame", text: `Goal class: ${goal.label}. ${goal.why}` });
-    evidence.forEach((ev) => trace.push({ step: "Evidence", text: evidenceLine(ev) }));
-    const inferences = evidence.map(inferRepo);
-    inferences.forEach((inf) => trace.push({ step: "Infer", text: `${inf.repo}: ${inf.claim}` }));
-    const primary = inferences[0];
-    const sequence = sequenceWork(goal, verbs, inferences);
-    trace.push({ step: "Decide", text: `Lead with ${primary.repo}. ${sequence.why}` });
-    const tasks = sequence.tasks.map((t, i) => ({ id: String(i + 1).padStart(2, "0"), repo: t.full, owner: t.owner, name: t.name, title: t.title, body: t.body, labels: ["atelier", t.kind], why: t.why, depends: t.depends || null }));
-    return { intent: text, created: new Date().toISOString(), method: "gather-infer-decide", goal: goal.label, summary: sequence.why, targets: unique(tasks.map((t) => t.repo)), trace, inferences, tasks };
+    if (!text) throw new Error("Write the work in a sentence.");
+    const inspections = (evidence || []).map(inspect);
+    const slice = pickSlice(text, inspections, snapshot);
+    const created = new Date().toISOString();
+    if (!slice || slice.kind === "none") {
+      const cold = inspections.slice(0, 4).map((x) => x.full + ": " + x.note);
+      return {
+        intent: text,
+        created,
+        method: "work-order",
+        mode: "none",
+        summary: (slice && slice.why) || "Nothing to open.",
+        slice: null,
+        tasks: [],
+        dont: ["New repository", "A second issue next to unfinished work", "More planning files"],
+        evidence: cold,
+        inspections,
+      };
+    }
+    const task = workOrder(text, slice);
+    return {
+      intent: text,
+      created,
+      method: "work-order",
+      mode: slice.kind,
+      summary: slice.why,
+      slice: task,
+      tasks: [task],
+      dont: task.dont,
+      evidence: task.evidence,
+      inspections,
+    };
   },
+
   toMarkdown(plan) {
-    const lines = [`# ${plan.intent}`, "", `_Reasoned ${plan.created} · ${plan.method} · ${plan.goal}_`, "", plan.summary, "", "## Reasoning"];
-    (plan.trace || []).forEach((t) => lines.push(`- **${t.step}.** ${t.text}`));
-    lines.push("", "## Work");
-    (plan.tasks || []).forEach((t) => { lines.push(`### ${t.id} — ${t.title}`); lines.push(`Repo: \`${t.repo}\`${t.depends ? ` · after ${t.depends}` : ""}`); lines.push(""); lines.push(t.body); lines.push(""); });
-    lines.push("---"); lines.push("Written by atelier from repository evidence. Source of truth is GitHub.");
-    return lines.join("\n");
+    if (!plan.slice) {
+      return ["# " + plan.intent, "", "NOTHING TO OPEN", "", plan.summary, "", "## Do not", ...(plan.dont || []).map((d) => "- " + d), "", "## Estate", ...(plan.evidence || []).map((e) => "- " + e)].join("\n");
+    }
+    return plan.slice.body;
   },
 };
-function briefRepo(r) { return { name: r.name, full: r.full_name, pushed: r.pushed_at, open: r.open_issues_count || 0, private: r.private, lang: r.language, desc: r.description || "" }; }
+
+function briefRepo(r) {
+  return { name: r.name, full: r.full_name, pushed: r.pushed_at, open: r.open_issues_count || 0, private: r.private, lang: r.language, desc: r.description || "" };
+}
+function isAdvance(intent) {
+  return /no new repo|hottest|one slice|finish one|advance the|do not create/i.test(intent);
+}
+function forbidsNewRepo(intent) {
+  return /no new repo|do not create a new repo|don't create a new repo|not a new repo/i.test(intent);
+}
 function scoreRepo(intent, repo, snapshot) {
-  const hay = haystack(repo); const words = tokenize(intent); let score = 0;
+  const hay = haystack(repo);
+  const words = tokenize(intent);
+  let score = 0;
   words.forEach((w) => { if (hay.includes(w)) score += 3; });
-  const families = [[/agent|harness|langgraph|swarm|orchestr/i, /agent|harness|forge|deep|graph|kimi|sidebrain/i, 8], [/graph|studio|swarm|forge/i, /graph|forgegraph|studio/i, 8], [/atlas|aether|catalog|observatory/i, /aether|atlas/i, 9], [/design|ux|thinking|wcag|prototype/i, /design|portfolio|ux/i, 6], [/social|reel|statix|vibe/i, /social|statix|vibe|reel/i, 6], [/ocr|pdf|annotat/i, /pdf|ocr/i, 7]];
+  const families = [
+    [/agent|harness|langgraph|swarm|orchestr/i, /agent|harness|forge|deep|graph|kimi|sidebrain/i, 8],
+    [/graph|studio|swarm|forge/i, /graph|forgegraph|studio/i, 8],
+    [/atlas|aether|catalog|observatory/i, /aether|atlas/i, 9],
+    [/design|ux|thinking|wcag|prototype/i, /design|portfolio|ux/i, 6],
+    [/social|reel|statix|vibe|desk|telegram/i, /social|statix|vibe|reel|engine/i, 10],
+  ];
   families.forEach(([q, r, w]) => { if (q.test(intent) && r.test(hay)) score += w; });
   const ageDays = (Date.now() - new Date(repo.pushed_at).getTime()) / 86400000;
-  if (ageDays < 3) score += 4; else if (ageDays < 14) score += 2; else if (ageDays > 180) score -= 2;
+  if (ageDays < 3) score += 4;
+  else if (ageDays < 14) score += 2;
+  else if (ageDays > 180) score -= 2;
   if (repo.archived) score -= 12;
-  if (repo.name === "atelier") score += /atelier|tracker|studio|plan/.test(intent) ? 10 : 1;
-  if ((repo.open_issues_count || 0) > 0 && /close|finish|debt|issue/.test(intent)) score += 2;
+  if (repo.name === "atelier") score += /atelier|tracker|studio|plan/.test(intent) ? 8 : -2;
+  const open = repo.open_issues_count || 0;
+  if (open > 0 && /close|finish|debt|issue|slice|hottest|advance/i.test(intent)) score += 8 + Math.min(open, 4);
+  if (isAdvance(intent)) {
+    score += Math.max(0, 10 - ageDays);
+    if (open > 0) score += 12;
+    if (repo.name === "atelier") score -= 6;
+  }
   if ((snapshot.heat || []).find((h) => h.full === repo.full_name)) score += 1;
   return score;
 }
-function signalsFor(intent, repo) { return tokenize(intent).filter((w) => haystack(repo).includes(w)).slice(0, 6); }
-function haystack(repo) { return `${repo.name} ${repo.full_name} ${repo.description || ""} ${repo.language || ""}`.toLowerCase(); }
-function tokenize(text) { return String(text).toLowerCase().split(/[^a-z0-9/+.-]+/).filter((w) => w.length > 2 && !STOP.has(w)); }
-const STOP = new Set("the and for with from that this into onto your you are was not all any can how what when why".split(" "));
-function classifyGoal(intent) {
-  if (/fix|bug|break|fail|error|regression/.test(intent)) return { label: "repair", why: "Stabilize something that is already supposed to work." };
-  if (/ship|launch|release|publish|deploy|pages/.test(intent)) return { label: "ship", why: "Make a public surface real and reachable." };
-  if (/plan|roadmap|scope|priorit/.test(intent)) return { label: "orient", why: "Decide sequence before more code." };
-  if (/doc|readme|write|explain/.test(intent)) return { label: "document", why: "A cold start should be possible from the repo alone." };
-  if (/connect|across|tracker|manage|estate|all my|every repo/.test(intent)) return { label: "integrate", why: "Work has to span repositories, not live in one silo." };
-  if (/reason|agent|understand|plan and execute/.test(intent)) return { label: "agent", why: "The product must think with evidence, then act on GitHub." };
-  return { label: "build", why: "Cut the smallest complete slice that changes the tree." };
+function haystack(repo) {
+  return (repo.name + " " + repo.full_name + " " + (repo.description || "") + " " + (repo.language || "")).toLowerCase();
 }
-function evidenceLine(ev) {
-  const commits = (ev.commits || []).slice(0, 3).map((c) => firstLine(c)).join("; ");
-  const issues = (ev.issues || []).slice(0, 3).map((i) => `#${i.number} ${i.title}`).join("; ");
-  const readme = firstLine(ev.readme || ev.desc || "no readme");
-  return `${ev.full} · ${ev.lang || "—"} · ${relAge(ev.pushed)} · ${readme}${commits ? ` · commits: ${commits}` : ""}${issues ? ` · open: ${issues}` : ""}`;
+function tokenize(text) {
+  return String(text).toLowerCase().split(/[^a-z0-9/+.-]+/).filter((w) => w.length > 2 && !STOP.has(w));
 }
-function inferRepo(ev) {
-  const age = daysSince(ev.pushed); const open = (ev.issues || []).length || ev.open || 0; const readme = (ev.readme || "").trim(); const last = firstLine((ev.commits && ev.commits[0]) || "");
-  let claim;
-  if (age <= 2) claim = `Hot. Last move: ${last || "recent push"}. Treat as the active surface.`;
-  else if (age > 90 && open === 0) claim = "Cold and quiet. Only touch if the intent names it.";
-  else if (open > 3) claim = `${open} open items. Prefer finishing one before opening five more.`;
-  else if (!readme) claim = "No README. A cold agent cannot start here without a page of context.";
-  else claim = `Described as “${firstLine(readme).slice(0, 90)}”. ${last ? `Latest: ${last}` : "No recent commit message."}`;
-  return { repo: ev.full, owner: ev.owner, name: ev.name, lang: ev.lang, age, open, claim, readme: firstLine(readme), last };
+const STOP = new Set("the and for with from that this into onto your you are was not all any can how what when why one".split(" "));
+
+function inspect(ev) {
+  const issues = (ev.issues || []).filter((i) => !i.pull_request);
+  const withBoxes = issues.map((i) => {
+    const boxes = parseBoxes(i.body || "");
+    const openBox = boxes.find((b) => !b.checked);
+    return {
+      number: i.number,
+      title: i.title,
+      body: i.body || "",
+      url: i.html_url || "",
+      updated: i.updated_at,
+      boxes,
+      openBox,
+      branch: findBranch(i.body || ""),
+      spec: findSpec(i.body || ""),
+    };
+  });
+  const continueIssue = withBoxes.find((i) => i.openBox) || withBoxes[0] || null;
+  const commits = (ev.commits || []).map((c) => firstLine(c)).filter(Boolean);
+  const root = ev.root || [];
+  const readme = ev.readme || "";
+  return {
+    full: ev.full,
+    owner: ev.owner,
+    name: ev.name,
+    lang: ev.lang,
+    pushed: ev.pushed,
+    age: daysSince(ev.pushed),
+    open: issues.length,
+    root,
+    hasReadme: !!(readme.trim()) || root.includes("README.md"),
+    hasAgents: /AGENTS\.md/i.test(root.join("\n")) || /(^|\n)#+\s*agents\b/i.test(readme),
+    hasPagesHint: hasLiveLink(readme, ev.homepage),
+    homepage: ev.homepage || "",
+    commits,
+    docsHeavy: commits.length > 0 && commits.slice(0, 5).every(isDocsCommit),
+    issues: withBoxes,
+    continueIssue,
+    firstUnchecked: continueIssue && continueIssue.openBox,
+    note: continueIssue ? ("#" + continueIssue.number + " " + (continueIssue.openBox ? continueIssue.openBox.text : continueIssue.title)) : (commits[0] ? ("last: " + commits[0]) : "quiet"),
+  };
 }
-function sequenceWork(goal, verbs, inferences) {
-  const lead = inferences[0]; const second = inferences[1]; const tasks = [];
-  if (goal.label === "integrate" || goal.label === "agent") {
-    tasks.push(task(lead, "build", "Make the reasoner write a durable plan file and issues from evidence", "Without a written trace, the loop is a chat."));
-    if (second) tasks.push(task(second, "document", "Add a one-page AGENTS.md so atelier can brief this repo cold", "Cross-repo work fails when the target has no constitution.", "01"));
-    tasks.push(task(lead, "ship", "Confirm GitHub Pages is the public door and the README points at it", "A studio that cannot be opened is not shipped."));
-    return { tasks, why: `Integration work belongs in ${lead.repo}, with ${second ? second.repo : "a sibling"} as the first well-described target.` };
+
+function pickSlice(intent, inspections) {
+  const ranked = inspections.slice().sort((a, b) => rankInspect(b) - rankInspect(a));
+  const noNew = forbidsNewRepo(intent) || isAdvance(intent);
+  for (const ev of ranked) {
+    if (ev.continueIssue && ev.firstUnchecked) {
+      return { kind: "continue", ev, issue: ev.continueIssue, box: ev.firstUnchecked, title: ev.firstUnchecked.text.slice(0, 92), why: "Open issue #" + ev.continueIssue.number + " already has a checklist. The slice is the first empty box." };
+    }
   }
-  if (goal.label === "repair") {
-    tasks.push(task(lead, "fix", `Reproduce and patch: ${clip(lead.last || lead.readme)}`, lead.claim));
-    tasks.push(task(lead, "verify", "Add or run the smallest check that would have caught it", "A fix without a check is a rumor.", "01"));
-    return { tasks, why: `Repair concentrates on ${lead.repo}, the hottest match.` };
+  for (const ev of ranked) {
+    if (ev.continueIssue) {
+      return { kind: "continue", ev, issue: ev.continueIssue, box: null, title: ev.continueIssue.title.slice(0, 92), why: "Open issue #" + ev.continueIssue.number + " has no boxes. Continue that title." };
+    }
   }
-  if (goal.label === "ship") {
-    tasks.push(task(lead, "ship", "Publish the current main to the public URL and verify the first screen", lead.claim));
-    tasks.push(task(lead, "document", "Write the three-step open path at the top of the README", "Shipping includes how a stranger starts.", "01"));
-    return { tasks, why: `${lead.repo} is the thing to put in front of people.` };
+  for (const ev of ranked) {
+    if (!ev.hasReadme || !ev.hasAgents) {
+      if (noNew && ev.open === 0 && ev.docsHeavy) continue;
+      return { kind: "open", ev, issue: null, box: null, title: !ev.hasReadme ? "Write README so a cold start is possible" : "Write AGENTS.md from the last commits", why: ev.full + " is missing " + (!ev.hasReadme ? "README" : "AGENTS.md") + "." };
+    }
   }
-  if (goal.label === "document") {
-    tasks.push(task(lead, "document", "Write README + AGENTS.md from the last commits and open issues", lead.claim));
-    return { tasks, why: `Documentation pays off first in ${lead.repo}.` };
+  for (const ev of ranked) {
+    const staticSite = (ev.root || []).some((n) => /^index\.html$/i.test(n));
+    if (staticSite && !ev.hasPagesHint) {
+      return { kind: "open", ev, issue: null, box: null, title: "Put a working Pages URL at the top of the README", why: ev.name + " looks like a site and has no Live URL." };
+    }
   }
-  if (goal.label === "orient") {
-    inferences.slice(0, 3).forEach((inf) => tasks.push(task(inf, "plan", `State done-when for the next slice in ${inf.name}`, inf.claim)));
-    return { tasks, why: "Orientation is a short plan in each live repo, not a new tracker." };
+  if (noNew) {
+    if (!ranked.find((e) => e.open > 0)) return { kind: "none", why: "No unfinished issue on the hot repos. Intent forbids a new repository." };
   }
-  const verb = verbs[0] || "build";
-  tasks.push(task(lead, verb, titleFrom(verb, lead), lead.claim));
-  if (second && verbs[1]) tasks.push(task(second, verbs[1], titleFrom(verbs[1], second), second.claim, "01"));
-  return { tasks, why: `Highest-leverage match is ${lead.repo}${second ? `, then ${second.repo}` : ""}.` };
+  const lead = ranked[0];
+  if (!lead) return { kind: "none", why: "No repository scored." };
+  const file = (lead.root || []).find((n) => /\.(js|ts|html|md)$/i.test(n)) || "README.md";
+  return { kind: "open", ev: lead, issue: null, box: null, title: "Change " + file + " for: " + clip(intent, 48), why: "No open issue to continue. One slice in " + lead.full + ", naming a file that exists." };
 }
-function task(inf, kind, title, why, depends) {
-  const [owner, name] = inf.repo.split("/");
-  return { full: inf.repo, owner, name, kind, title: `${labelKind(kind)}: ${title}`.slice(0, 92), why, depends: depends || null, body: [title, "", "## Why this repo", why, "", "## Evidence", inf.readme ? `- README: ${inf.readme}` : "- No README on file.", inf.last ? `- Latest commit: ${inf.last}` : "- No commit message loaded.", `- Last push: ${inf.age}d ago`, `- Open items seen: ${inf.open}`, "", "## Done when", doneWhen(kind), "", "_Opened by atelier after gather → infer → decide. No external backend._"].join("\n") };
+
+function rankInspect(ev) {
+  let n = 0;
+  if (ev.firstUnchecked) n += 40;
+  else if (ev.continueIssue) n += 20;
+  if (ev.age <= 2) n += 8;
+  else if (ev.age <= 14) n += 3;
+  if (ev.docsHeavy && ev.open === 0) n -= 12;
+  if (ev.name === "atelier") n -= 8;
+  return n;
 }
-function labelKind(kind) { return { fix: "Fix", ship: "Ship", document: "Document", plan: "Plan", verify: "Verify", refine: "Refine", build: "Build" }[kind] || "Work"; }
-function titleFrom(verb, inf) { return `${inf.name} — ${inf.last || inf.readme || "next complete slice"}`.slice(0, 70); }
-function doneWhen(kind) { return { fix: "The failure cannot be reproduced on main, and a check exists.", ship: "A URL loads the current main without a local server.", document: "A stranger can start from README + AGENTS.md alone.", plan: "The next slice has a done-when and a named repo.", verify: "The check ran, and gaps are issues — not vibes.", refine: "Behavior is unchanged; one layer of complexity is gone.", build: "Main has the slice, and the tree is usable." }[kind] || "The repo is clearly different in the way the intent asked."; }
-function detectVerbs(intent) {
-  const verbs = [];
-  if (/fix|bug|break|fail|error/.test(intent)) verbs.push("fix");
-  if (/ship|launch|release|publish|deploy/.test(intent)) verbs.push("ship");
-  if (/doc|readme|write/.test(intent)) verbs.push("document");
-  if (/plan|roadmap|scope/.test(intent)) verbs.push("plan");
-  if (/test|qa|audit|verify/.test(intent)) verbs.push("verify");
-  if (/refactor|clean|simplify/.test(intent)) verbs.push("refine");
-  if (!verbs.length) verbs.push("build");
-  return verbs.slice(0, 3);
+
+function workOrder(intent, slice) {
+  const ev = slice.ev;
+  const issue = slice.issue;
+  const box = slice.box;
+  const branch = (issue && issue.branch) || null;
+  const spec = (issue && issue.spec) || null;
+  const continues = issue ? issue.number : null;
+  const title = slice.title;
+  const doSteps = buildDo(slice, branch, spec);
+  const done = buildDone(slice);
+  const dont = buildDont(intent, slice);
+  const evidence = buildEvidence(ev, slice);
+  const body = [
+    "# " + title, "",
+    "INTENT " + intent,
+    "REPO " + ev.full,
+    "SLICE " + title,
+    continues ? ("CONTINUE issue #" + continues + (branch ? " | branch " + branch : "") + (spec ? " | " + spec : "")) : "CONTINUE new issue",
+    "", "## Do this sitting", ...doSteps.map((s, i) => (i + 1) + ". " + s),
+    "", "## Done when", ...done.map((s) => "- [ ] " + s),
+    "", "## Do not", ...dont.map((s) => "- " + s),
+    "", "## Evidence", ...evidence.map((s) => "- " + s),
+    "", "_Work order from GitHub evidence. atelier did not invent a second issue._",
+  ].join("\n");
+  return { id: "01", repo: ev.full, owner: ev.owner, name: ev.name, title, slice: title, continues, branch, spec, url: issue && issue.url, kind: slice.kind, do: doSteps, done, dont, evidence, why: slice.why, labels: ["atelier"], body };
+}
+
+function buildDo(slice, branch, spec) {
+  const issue = slice.issue;
+  const box = slice.box;
+  const ev = slice.ev;
+  if (slice.kind === "continue" && box) {
+    const steps = [];
+    if (branch) steps.push("Check out `" + branch + "` if it exists; otherwise create it from main.");
+    else steps.push("Stay on the branch named in #" + issue.number + ", or create it from main.");
+    if (spec) steps.push("Open `" + spec + "` and implement only this box: " + box.text);
+    else steps.push("Do only this box on #" + issue.number + ": " + box.text);
+    const others = (issue.boxes || []).filter((b) => !b.checked && b.text !== box.text);
+    if (others.length) steps.push("Do not start " + others.slice(0, 3).map((b) => clip(b.text, 24)).join(", ") + " in this sitting.");
+    steps.push("Tick that box on #" + issue.number + ". Leave the other boxes.");
+    return steps.slice(0, 5);
+  }
+  if (slice.kind === "continue") {
+    return ["Open #" + issue.number + " and work the title as written.", "Do not open a second issue in " + ev.name + ".", "Stop when the issue can close or the next checkbox appears."];
+  }
+  if (/README/.test(slice.title)) return ["Write README.md from the last commits: " + ((ev.commits || []).slice(0, 3).join("; ") || "the current tree") + ".", "State how a stranger starts, in three steps.", "Commit on main."];
+  if (/AGENTS/.test(slice.title)) return ["Write AGENTS.md: what this repo is, what not to touch, how to run it.", "Use the last five commit subjects as the source, not invention."];
+  if (/Pages URL/.test(slice.title)) return ["Enable Pages on main if it is not on.", "Put the Live URL in the first ten lines of the README.", "Open the URL once."];
+  return ["Open " + ev.full + " and change only the named file.", "Do not add a repository or a tracker.", "Commit when the done-when is true."];
+}
+function buildDone(slice) {
+  if (slice.kind === "continue" && slice.box) return [clip(slice.box.text, 80) + " is checked on #" + slice.issue.number, "No new issue was opened in this repo"];
+  if (slice.kind === "continue") return ["#" + slice.issue.number + " moved: comment, checkbox, or close"];
+  if (/README/.test(slice.title)) return ["README.md exists on main and states how to start"];
+  if (/AGENTS/.test(slice.title)) return ["AGENTS.md exists on main"];
+  if (/Pages URL/.test(slice.title)) return ["README contains a Live URL that loads"];
+  return ["The named file on main is different in the way the slice asked"];
+}
+function buildDont(intent, slice) {
+  const list = [];
+  if (forbidsNewRepo(intent) || isAdvance(intent)) list.push("New repository");
+  if (slice.kind === "continue") list.push("A second issue next to #" + slice.issue.number);
+  if (slice.box) {
+    const rest = (slice.issue.boxes || []).filter((b) => !b.checked && b.text !== slice.box.text);
+    if (rest.length) list.push("Later boxes: " + rest.slice(0, 4).map((b) => clip(b.text, 28)).join("; "));
+  }
+  list.push("Extra planning files in atelier");
+  list.push("A paid provider call");
+  return unique(list);
+}
+function buildEvidence(ev, slice) {
+  const rows = [];
+  if (slice.issue) rows.push(ev.name + "#" + slice.issue.number + " is open" + (slice.box ? " with an unchecked box: " + clip(slice.box.text, 60) : ""));
+  rows.push(ev.full + " last push " + ev.age + "d ago; last commit: " + (ev.commits[0] || "none"));
+  if (ev.docsHeavy) rows.push(ev.name + " recent commits are notes/docs — writing, not a hole");
+  rows.push(ev.open ? ev.open + " open issue(s) seen" : "No open issues seen on this repo");
+  return rows.slice(0, 4);
+}
+function parseBoxes(body) {
+  return String(body || "").split("\n").map((line) => {
+    const m = line.match(/^\s*[-*+]\s*\[( |x|X)\]\s*(.+)$/);
+    if (!m) return null;
+    return { checked: m[1].toLowerCase() === "x", text: m[2].replace(/\s+/g, " ").trim() };
+  }).filter(Boolean);
+}
+function findBranch(body) {
+  const tick = String(body || "").match(/`((?:feat|fix|chore|docs)\/[A-Za-z0-9._/-]+)`/);
+  if (tick) return tick[1];
+  const named = String(body || "").match(/\bbranch(?:\s+name)?[:\s]+`?((?:feat|fix|chore|docs)\/[A-Za-z0-9._/-]+)`?/i);
+  return named ? named[1] : null;
+}
+function findSpec(body) {
+  const m = String(body || "").match(/((?:docs|spec|specs|superpowers)\/[A-Za-z0-9._/-]+\.md)/);
+  return m ? m[1] : null;
+}
+function hasLiveLink(readme, homepage) {
+  if (homepage && /github\.io|netlify|vercel|pages/i.test(homepage)) return true;
+  return /https?:\/\/[^\s)]*github\.io[^\s)]*|^\s*live\s*:/im.test(readme || "");
+}
+function isDocsCommit(msg) {
+  return /^(docs?|note|readme|sitemap|launch|kit|typo|copy|comment)\b|^add (notes|sitemap|launch|readme)/i.test(msg);
 }
 function summarizeEvent(e) {
   const payload = e.payload || {};
-  if (e.type === "PushEvent") return `Pushed ${payload.distinct_size || payload.commits && payload.commits.length || 0} commit(s)`;
-  if (e.type === "IssuesEvent") return `${payload.action} issue ${payload.issue && payload.issue.title || ""}`;
-  if (e.type === "PullRequestEvent") return `${payload.action} PR ${payload.pull_request && payload.pull_request.title || ""}`;
-  if (e.type === "CreateEvent") return `Created ${payload.ref_type} ${payload.ref || ""}`;
-  return e.type.replace(/Event$/, "");
+  if (e.type === "PushEvent") return "Pushed " + (payload.distinct_size || (payload.commits && payload.commits.length) || 0) + " commit(s)";
+  if (e.type === "IssuesEvent") return (payload.action || "") + " issue " + (payload.issue && payload.issue.title || "");
+  if (e.type === "PullRequestEvent") return (payload.action || "") + " PR " + (payload.pull_request && payload.pull_request.title || "");
+  if (e.type === "CreateEvent") return "Created " + (payload.ref_type || "") + " " + (payload.ref || "");
+  return String(e.type || "").replace(/Event$/, "");
 }
 function firstLine(s) { return String(s || "").split("\n").map((x) => x.trim()).find(Boolean) || ""; }
-function clip(s) { return String(s || "").slice(0, 64); }
+function clip(s, n) { const t = String(s || ""); return t.length <= n ? t : t.slice(0, n - 1) + "…"; }
 function daysSince(date) { if (!date) return 999; return Math.floor((Date.now() - new Date(date).getTime()) / 86400000); }
-function relAge(date) { const d = daysSince(date); if (d <= 0) return "today"; if (d === 1) return "yesterday"; return `${d}d ago`; }
 function unique(arr) { return [...new Set(arr)]; }
